@@ -1,0 +1,894 @@
+import React, { useState, useMemo, useEffect } from "react";
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from "recharts";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  LayoutGrid, Zap, Cpu, BrainCircuit, BarChart3, FileText, Bell,
+  Leaf, Settings, Search, ChevronLeft, ChevronRight, Sparkles,
+  TrendingDown, TrendingUp, Gauge, IndianRupee, Activity, X,
+  AlertTriangle, CheckCircle2, AlertOctagon, Clock, Wrench,
+  ArrowUpRight, Wind, TreePine, CloudCog, Wifi, RadioTower,
+  ChevronDown, User, Flame, ShieldCheck, Send, Bot, Download,
+  Moon, Sun, Lock, Globe, ToggleLeft, ToggleRight, Mail, Plug,
+} from "lucide-react";
+ 
+/* ============================== DESIGN TOKENS ==============================
+Color: base #0A0D10, panel #12161B, panel-2 #171C22, border #232A32
+        amber (energy) #F0A83C, teal (AI) #2FD1C5, red (critical) #EF5350,
+        yellow (warning) #F0B429, green (healthy) #3FC77E
+Type: font-sans (Inter-ish system stack), tabular-nums on all data, tight
+      tracking on headers, uppercase micro-labels for eyebrows.
+Signature: "Pulse Rail" — a live EKG-style waveform running along the header
+      that visualizes overall factory load in real time, anchoring the OS feel.
+============================================================================ */
+ 
+const COLORS = {
+  base: "#0A0D10", panel: "#12161B", panel2: "#171C22", border: "#232A32",
+  amber: "#F0A83C", teal: "#2FD1C5", red: "#EF5350", yellow: "#F0B429",
+  green: "#3FC77E", text: "#E7EAED", sub: "#8A94A0",
+};
+ 
+/* ============================== MOCK DATA ============================== */
+ 
+const DEPARTMENTS = ["Production", "Assembly", "Packaging", "Utilities", "Administration"];
+ 
+const MACHINE_NAMES = [
+  "CNC Lathe A1","CNC Lathe A2","Hydraulic Press B1","Hydraulic Press B2",
+  "Injection Molder C1","Injection Molder C2","Conveyor Line D1","Conveyor Line D2",
+  "Air Compressor E1","Air Compressor E2","Robotic Welder F1","Robotic Welder F2",
+  "Packaging Line G1","Packaging Line G2","Cooling Tower H1","Cooling Tower H2",
+  "Boiler Unit I1","Chiller Unit J1","Paint Booth K1","Extruder L1",
+];
+ 
+function seededRandom(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+const rnd = seededRandom(42);
+ 
+const MACHINES = MACHINE_NAMES.map((name, i) => {
+  const health = Math.round(40 + rnd() * 60);
+  const status = health > 75 ? "healthy" : health > 50 ? "warning" : "critical";
+  return {
+    id: `M-${String(i + 1).padStart(2, "0")}`,
+    name,
+    dept: DEPARTMENTS[i % DEPARTMENTS.length],
+    status,
+    power: +(3 + rnd() * 22).toFixed(1),
+    efficiency: Math.round(55 + rnd() * 40),
+    health,
+    hours: Math.round(1200 + rnd() * 6000),
+    lastMaint: `${Math.round(2 + rnd() * 40)} days ago`,
+  };
+});
+ 
+const HEALTHY = MACHINES.filter((m) => m.status === "healthy").length;
+const WARNING = MACHINES.filter((m) => m.status === "warning").length;
+const CRITICAL = MACHINES.filter((m) => m.status === "critical").length;
+ 
+const WEEK_TREND = [
+  { day: "Mon", kwh: 1240, cost: 11160, predicted: 1260 },
+  { day: "Tue", kwh: 1310, cost: 11790, predicted: 1300 },
+  { day: "Wed", kwh: 1185, cost: 10665, predicted: 1220 },
+  { day: "Thu", kwh: 1420, cost: 12780, predicted: 1380 },
+  { day: "Fri", kwh: 1390, cost: 12510, predicted: 1400 },
+  { day: "Sat", kwh: 980, cost: 8820, predicted: 1010 },
+  { day: "Sun", kwh: 905, cost: 8145, predicted: 950 },
+];
+ 
+const TOP5_EFFICIENCY = [...MACHINES]
+  .sort((a, b) => b.efficiency - a.efficiency)
+  .slice(0, 5)
+  .map((m) => ({ name: m.id, efficiency: m.efficiency }));
+ 
+const DEPT_USAGE = DEPARTMENTS.map((d, i) => ({
+  name: d,
+  value: MACHINES.filter((m) => m.dept === d).reduce((s, m) => s + m.power, 0).toFixed(0) * 1,
+}));
+ 
+const PIE_COLORS = [COLORS.amber, COLORS.teal, COLORS.green, COLORS.yellow, "#7C8CF8"];
+ 
+const RECOMMENDATIONS = [
+  {
+    priority: "High",
+    title: "Improve Power Factor",
+    savings: "₹3,850 / month",
+    reason: "Low power factor detected during peak hours on Utilities feeder.",
+    action: "Review Capacitor Bank",
+  },
+  {
+    priority: "High",
+    title: "Shift Load Off-Peak",
+    savings: "₹5,200 / month",
+    reason: "Injection Molders C1–C2 run heaviest during peak tariff window.",
+    action: "Reschedule Batch Run",
+  },
+  {
+    priority: "Medium",
+    title: "Service Air Compressor E1",
+    savings: "₹1,640 / month",
+    reason: "Compressor drawing 14% more current than baseline for its load.",
+    action: "Schedule Maintenance",
+  },
+  {
+    priority: "Low",
+    title: "Optimize Cooling Tower Cycles",
+    savings: "₹980 / month",
+    reason: "Cooling towers idling above setpoint after shift changeover.",
+    action: "Tune Control Logic",
+  },
+];
+ 
+const ALERTS = [
+  { time: "08:12 AM", machine: "M-07 · Conveyor Line D1", type: "Motor Overload", priority: "critical", action: "Inspect motor bearings", status: "Open" },
+  { time: "09:04 AM", machine: "M-13 · Packaging Line G2", type: "Voltage Fluctuation", priority: "warning", action: "Check feeder connection", status: "Acknowledged" },
+  { time: "10:47 AM", machine: "M-05 · Injection Molder C1", type: "Abnormal Power Spike", priority: "critical", action: "Reduce load, inspect heater bank", status: "Open" },
+  { time: "11:30 AM", machine: "M-17 · Boiler Unit I1", type: "Maintenance Reminder", priority: "info", action: "Service due in 3 days", status: "Scheduled" },
+];
+ 
+const TIMELINE = [
+  { time: "09:10 AM", text: "Machine M-04 started" },
+  { time: "09:35 AM", text: "Energy spike detected on M-05" },
+  { time: "09:40 AM", text: "AI generated maintenance recommendation" },
+  { time: "09:45 AM", text: "Operator acknowledged alert" },
+  { time: "10:05 AM", text: "Machine M-05 returned to normal" },
+];
+ 
+const NAV = [
+  { label: "Dashboard", icon: LayoutGrid },
+  { label: "Live Energy", icon: Zap },
+  { label: "Machines", icon: Cpu },
+  { label: "AI Insights", icon: BrainCircuit },
+  { label: "Analytics", icon: BarChart3 },
+  { label: "Reports", icon: FileText },
+  { label: "Alerts", icon: Bell },
+  { label: "Carbon", icon: Leaf },
+  { label: "Settings", icon: Settings },
+];
+ 
+const REPORTS = [
+  { name: "Weekly Energy Summary", date: "07 Jul 2026", size: "1.2 MB", type: "PDF" },
+  { name: "Machine Health Audit", date: "05 Jul 2026", size: "860 KB", type: "PDF" },
+  { name: "Electricity Cost Breakdown", date: "01 Jul 2026", size: "540 KB", type: "XLSX" },
+  { name: "Carbon Emissions Report", date: "28 Jun 2026", size: "710 KB", type: "PDF" },
+  { name: "AI Recommendations Log", date: "25 Jun 2026", size: "410 KB", type: "CSV" },
+];
+ 
+const AI_CHAT_RULES = [
+  { keys: ["save", "saving", "money"], reply: "Following today's AI recommendations — improving power factor and shifting Injection Molder load off-peak — could save approximately ₹9,050 this month." },
+  { keys: ["m-07", "m07"], reply: "M-07 (Conveyor Line D1) is drawing 14% above its baseline power. I recommend inspecting motor bearings within 48 hours to prevent a critical failure." },
+  { keys: ["critical", "fail", "failure"], reply: `${CRITICAL} machines are currently flagged critical. The highest risk is M-07 — schedule maintenance today to avoid unplanned downtime.` },
+  { keys: ["bill", "cost", "predict"], reply: "Based on current load patterns, this month's bill is predicted at ₹3.42L — about 4.1% higher than last month, mainly driven by peak-hour Injection Molder usage." },
+  { keys: ["carbon", "emission"], reply: "You've emitted 4.2t of carbon this month and saved 0.9t through efficiency measures. Shifting heavy machines after 6 PM could cut emissions by a further 12%." },
+  { keys: ["efficiency", "health"], reply: "Overall factory efficiency is 78% with an AI Health Score of 87/100 — up 3 points from last week. Packaging Line G2 is your most efficient machine." },
+  { keys: ["hello", "hi", "hey"], reply: "Hello Admin. I'm keeping an eye on all 20 machines right now — ask me about savings, alerts, or any specific machine." },
+];
+ 
+function getAIReply(msg) {
+  const lower = msg.toLowerCase();
+  for (const rule of AI_CHAT_RULES) {
+    if (rule.keys.some((k) => lower.includes(k))) return rule.reply;
+  }
+  return "Based on current factory data, everything outside the 2 flagged machines is operating within normal parameters. Ask me about savings, alerts, or a specific machine ID for more detail.";
+}
+ 
+const STATUS_META = {
+  healthy: { label: "Healthy", color: COLORS.green, Icon: CheckCircle2 },
+  warning: { label: "Warning", color: COLORS.yellow, Icon: AlertTriangle },
+  critical: { label: "Critical", color: COLORS.red, Icon: AlertOctagon },
+};
+ 
+/* ============================== SMALL PRIMITIVES ============================== */
+ 
+function Card({ children, className = "" }) {
+  return (
+    <div
+      className={`rounded-2xl border ${className}`}
+      style={{ background: COLORS.panel, borderColor: COLORS.border }}
+    >
+      {children}
+    </div>
+  );
+}
+ 
+function Eyebrow({ children }) {
+  return (
+    <div
+      className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+      style={{ color: COLORS.sub }}
+    >
+      {children}
+    </div>
+  );
+}
+ 
+function Sparkline({ data, color }) {
+  return (
+    <ResponsiveContainer width="100%" height={36}>
+      <AreaChart data={data}>
+        <defs>
+          <linearGradient id={`grad-${color}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={2} fill={`url(#grad-${color})`} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+ 
+function mkSpark(base) {
+  return Array.from({ length: 10 }, (_, i) => ({ v: base + Math.sin(i * 0.9) * base * 0.08 + rnd() * base * 0.05 }));
+}
+ 
+/* ============================== PULSE RAIL (signature) ============================== */
+ 
+function PulseRail() {
+  const points = useMemo(
+    () => Array.from({ length: 60 }, (_, i) => 50 + Math.sin(i * 0.5) * 14 + (i % 7 === 0 ? 22 : 0) + rnd() * 6),
+    []
+  );
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${(i / (points.length - 1)) * 100} ${100 - p}`)
+    .join(" ");
+  return (
+    <div className="relative h-10 w-full overflow-hidden rounded-lg" style={{ background: "#0D1116" }}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+        <path d={path} fill="none" stroke={COLORS.teal} strokeWidth="1.4" opacity="0.9" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <motion.div
+        className="absolute top-0 h-full w-8"
+        style={{ background: "linear-gradient(90deg, transparent, rgba(47,209,197,0.35), transparent)" }}
+        animate={{ left: ["-10%", "110%"] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: "linear" }}
+      />
+    </div>
+  );
+}
+ 
+/* ============================== KPI CARD ============================== */
+ 
+function KpiCard({ icon: Icon, label, value, delta, positive, sparkColor, sparkBase, suffix }) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between">
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-xl"
+          style={{ background: `${sparkColor}1A`, color: sparkColor }}
+        >
+          <Icon size={18} />
+        </div>
+        <div
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+          style={{
+            color: positive ? COLORS.green : COLORS.red,
+            background: positive ? `${COLORS.green}17` : `${COLORS.red}17`,
+          }}
+        >
+          {positive ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
+          {delta}
+        </div>
+      </div>
+      <div className="mt-3">
+        <Eyebrow>{label}</Eyebrow>
+        <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" style={{ color: COLORS.text }}>
+          {value}
+          {suffix && <span className="ml-1 text-sm font-normal" style={{ color: COLORS.sub }}>{suffix}</span>}
+        </div>
+      </div>
+      <div className="mt-2 -mx-1">
+        <Sparkline data={mkSpark(sparkBase)} color={sparkColor} />
+      </div>
+    </Card>
+  );
+}
+ 
+/* ============================== MAIN APP ============================== */
+ 
+export default function EnergyOSDashboard() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [activeMachine, setActiveMachine] = useState(null);
+  const [time, setTime] = useState(new Date());
+  const [activePage, setActivePage] = useState("Dashboard");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    { from: "ai", text: "Hi Admin, I'm EnergyOS AI. Ask me about savings, alerts, or any machine." },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatTyping, setChatTyping] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [settings, setSettings] = useState({
+    darkMode: true, emailAlerts: true, aiAutoActions: false, smsAlerts: false,
+  });
+ 
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000 * 30);
+    return () => clearInterval(t);
+  }, []);
+ 
+  const shift = time.getHours() < 14 ? "Morning Shift" : time.getHours() < 22 ? "Evening Shift" : "Night Shift";
+ 
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return MACHINES.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)).slice(0, 6);
+  }, [searchQuery]);
+ 
+  function sendChat(text) {
+    if (!text.trim()) return;
+    setChatMessages((prev) => [...prev, { from: "user", text }]);
+    setChatInput("");
+    setChatTyping(true);
+    setTimeout(() => {
+      setChatMessages((prev) => [...prev, { from: "ai", text: getAIReply(text) }]);
+      setChatTyping(false);
+    }, 900);
+  }
+ 
+  function openMachine(m) {
+    setActiveMachine(m);
+    setActivePage("Machines");
+    setSearchQuery("");
+  }
+ 
+  return (
+    <div className="flex h-screen w-full font-sans antialiased" style={{ background: COLORS.base, color: COLORS.text }}>
+      {/* ================= SIDEBAR ================= */}
+      <motion.aside
+        animate={{ width: collapsed ? 76 : 232 }}
+        transition={{ type: "spring", stiffness: 260, damping: 28 }}
+        className="flex h-full shrink-0 flex-col border-r"
+        style={{ background: COLORS.panel, borderColor: COLORS.border }}
+      >
+        <div className="flex items-center gap-2 px-4 py-5">
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ background: `linear-gradient(135deg, ${COLORS.amber}, ${COLORS.teal})` }}
+          >
+            <Zap size={16} className="text-black" />
+          </div>
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.span
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="text-sm font-bold tracking-tight"
+              >
+                Energy<span style={{ color: COLORS.amber }}>OS</span>
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+ 
+        <nav className="flex-1 space-y-1 px-3">
+          {NAV.map(({ label, icon: Icon }) => {
+            const active = activePage === label;
+            return (
+              <button
+                key={label}
+                onClick={() => { setActivePage(label); setActiveMachine(null); }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors hover:brightness-125"
+                style={{
+                  background: active ? `${COLORS.amber}14` : "transparent",
+                  color: active ? COLORS.amber : COLORS.sub,
+                }}
+              >
+                <Icon size={18} className="shrink-0" />
+                {!collapsed && <span>{label}</span>}
+                {active && !collapsed && <span className="ml-auto h-1.5 w-1.5 rounded-full" style={{ background: COLORS.amber }} />}
+              </button>
+            );
+          })}
+        </nav>
+ 
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="m-3 flex items-center justify-center gap-2 rounded-xl border py-2 text-xs font-medium"
+          style={{ borderColor: COLORS.border, color: COLORS.sub }}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /> Collapse</>}
+        </button>
+      </motion.aside>
+ 
+      {/* ================= MAIN ================= */}
+      <div className="flex h-full flex-1 flex-col overflow-hidden">
+        {/* ---------- HEADER ---------- */}
+        <header
+          className="flex shrink-0 items-center gap-4 border-b px-6 py-3"
+          style={{ borderColor: COLORS.border, background: "rgba(18,22,27,0.7)", backdropFilter: "blur(10px)" }}
+        >
+          <div>
+            <div className="text-sm font-semibold">Vishwakarma Precision Works</div>
+            <div className="flex items-center gap-2 text-[11px]" style={{ color: COLORS.sub }}>
+              <span>{shift}</span>
+              <span>·</span>
+              <span className="tabular-nums">
+                {time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+          </div>
+ 
+          <div className="ml-4 hidden max-w-xs flex-1 items-center gap-2 rounded-xl border px-3 py-2 md:flex" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+            <Search size={15} style={{ color: COLORS.sub }} />
+            <input
+              placeholder="Search machines, alerts, reports…"
+              className="w-full bg-transparent text-xs outline-none placeholder:text-inherit"
+              style={{ color: COLORS.text }}
+            />
+          </div>
+ 
+          <div className="hidden flex-1 items-center px-4 lg:flex">
+            <PulseRail />
+          </div>
+ 
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-black"
+              style={{ background: `linear-gradient(135deg, ${COLORS.amber}, #F5C36A)` }}
+            >
+              <Sparkles size={14} /> Ask EnergyOS
+            </button>
+            <button className="relative rounded-xl border p-2" style={{ borderColor: COLORS.border }}>
+              <Bell size={16} />
+              <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full" style={{ background: COLORS.red }} />
+            </button>
+            <div className="flex items-center gap-2 rounded-xl border px-2 py-1.5" style={{ borderColor: COLORS.border }}>
+              <div className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: COLORS.panel2 }}>
+                <User size={13} />
+              </div>
+              <span className="hidden text-xs font-medium sm:inline">Admin</span>
+              <ChevronDown size={12} style={{ color: COLORS.sub }} />
+            </div>
+          </div>
+        </header>
+ 
+        {/* ---------- SCROLLABLE BODY ---------- */}
+        <main className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-6">
+ 
+            {/* SECTION 1 — WELCOME / AI SUMMARY */}
+            <Card className="relative overflow-hidden p-6">
+              <div
+                className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full blur-3xl"
+                style={{ background: `radial-gradient(circle, ${COLORS.teal}22, transparent 70%)` }}
+              />
+              <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <Eyebrow>Factory status</Eyebrow>
+                  <h1 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Admin</h1>
+                  <div className="mt-2 flex items-center gap-2 text-sm">
+                    <span className="h-2 w-2 rounded-full" style={{ background: COLORS.green, boxShadow: `0 0 8px ${COLORS.green}` }} />
+                    <span style={{ color: COLORS.green }} className="font-medium">Running Efficiently</span>
+                  </div>
+ 
+                  <div className="mt-4 flex items-start gap-2 max-w-xl">
+                    <BrainCircuit size={16} className="mt-0.5 shrink-0" style={{ color: COLORS.teal }} />
+                    <p className="text-sm leading-relaxed" style={{ color: COLORS.sub }}>
+                      Today's energy consumption is <span style={{ color: COLORS.text }}>9% lower</span> than yesterday.
+                      Machine <span style={{ color: COLORS.text }}>M-07</span> is consuming unusually high power.
+                      Estimated savings if recommendations are followed: <span style={{ color: COLORS.green }}>₹2,450</span>.
+                    </p>
+                  </div>
+                </div>
+ 
+                <div className="flex items-center gap-6 rounded-2xl border p-5" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                  <RadialHealth value={87} />
+                  <div>
+                    <Eyebrow>AI health score</Eyebrow>
+                    <div className="text-3xl font-semibold tabular-nums">87<span className="text-base font-normal" style={{ color: COLORS.sub }}>/100</span></div>
+                    <div className="mt-1 text-xs" style={{ color: COLORS.green }}>+3 vs. last week</div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+ 
+            {/* SECTION 2 — KPI GRID */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+              <KpiCard icon={Zap} label="Today's Energy" value="1,284" suffix="kWh" delta="9.1%" positive sparkColor={COLORS.amber} sparkBase={1200} />
+              <KpiCard icon={Activity} label="Current Load" value="182" suffix="kW" delta="2.4%" positive={false} sparkColor={COLORS.teal} sparkBase={180} />
+              <KpiCard icon={IndianRupee} label="Today's Cost" value="₹11,556" delta="6.8%" positive sparkColor={COLORS.yellow} sparkBase={11000} />
+              <KpiCard icon={FileText} label="Monthly Bill (Predicted)" value="₹3.42L" delta="4.1%" positive sparkColor={"#7C8CF8"} sparkBase={340000} />
+              <KpiCard icon={TrendingDown} label="Today's Savings" value="₹2,450" delta="12%" positive sparkColor={COLORS.green} sparkBase={2200} />
+              <KpiCard icon={Gauge} label="AI Health Score" value="87" suffix="/100" delta="3 pts" positive sparkColor={COLORS.amber} sparkBase={85} />
+            </div>
+ 
+            {/* SECTION 3 — ENERGY TREND */}
+            <Card className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Eyebrow>Energy consumption trend</Eyebrow>
+                  <h2 className="mt-1 text-base font-semibold">Last 7 days</h2>
+                </div>
+                <div className="flex items-center gap-4 text-xs" style={{ color: COLORS.sub }}>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: COLORS.amber }} />Actual (kWh)</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: COLORS.teal }} />AI Predicted</span>
+                </div>
+              </div>
+              <div className="mt-4 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={WEEK_TREND}>
+                    <defs>
+                      <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={COLORS.amber} stopOpacity={0.25} />
+                        <stop offset="100%" stopColor={COLORS.amber} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="day" stroke={COLORS.sub} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis stroke={COLORS.sub} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ background: COLORS.panel2, border: `1px solid ${COLORS.border}`, borderRadius: 12, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="kwh" stroke={COLORS.amber} strokeWidth={2.5} dot={{ r: 3, fill: COLORS.amber }} animationDuration={900} />
+                    <Line type="monotone" dataKey="predicted" stroke={COLORS.teal} strokeWidth={2} strokeDasharray="5 5" dot={false} animationDuration={900} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+ 
+            {/* SECTION 4 — FACTORY HEALTH OVERVIEW */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+              <MiniStat icon={CheckCircle2} label="Healthy Machines" value={HEALTHY} color={COLORS.green} />
+              <MiniStat icon={AlertTriangle} label="Under Warning" value={WARNING} color={COLORS.yellow} />
+              <MiniStat icon={AlertOctagon} label="Critical" value={CRITICAL} color={COLORS.red} />
+              <MiniStat icon={Gauge} label="Avg. Efficiency" value="78%" color={COLORS.teal} />
+              <MiniStat icon={Activity} label="Power Factor" value="0.91" color={"#7C8CF8"} />
+              <MiniStat icon={Leaf} label="Carbon Emission" value="4.2t" color={COLORS.amber} />
+            </div>
+ 
+            {/* SECTION 5 — MACHINE HEALTH TABLE */}
+            <Card className="overflow-hidden p-0">
+              <div className="flex items-center justify-between px-5 pt-5">
+                <div>
+                  <Eyebrow>Fleet overview</Eyebrow>
+                  <h2 className="mt-1 text-base font-semibold">Machine health</h2>
+                </div>
+                <span className="text-xs" style={{ color: COLORS.sub }}>{MACHINES.length} machines</span>
+              </div>
+              <div className="mt-4 max-h-[420px] overflow-y-auto px-2 pb-2">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="sticky top-0 z-10 text-left text-[11px] uppercase tracking-wide" style={{ background: COLORS.panel, color: COLORS.sub }}>
+                      <th className="px-3 py-2 font-medium">Machine</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Power</th>
+                      <th className="px-3 py-2 font-medium">Efficiency</th>
+                      <th className="px-3 py-2 font-medium">Health</th>
+                      <th className="px-3 py-2 font-medium">Running Hrs</th>
+                      <th className="px-3 py-2 font-medium">Last Maint.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {MACHINES.map((m) => {
+                      const meta = STATUS_META[m.status];
+                      return (
+                        <tr
+                          key={m.id}
+                          onClick={() => setActiveMachine(m)}
+                          className="cursor-pointer border-t transition-colors hover:brightness-125"
+                          style={{ borderColor: COLORS.border }}
+                        >
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium">{m.name}</div>
+                            <div className="text-xs" style={{ color: COLORS.sub }}>{m.id} · {m.dept}</div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                              style={{ background: `${meta.color}17`, color: meta.color }}
+                            >
+                              <meta.Icon size={11} /> {meta.label}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums">{m.power} kW</td>
+                          <td className="px-3 py-2.5 tabular-nums">{m.efficiency}%</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 rounded-full" style={{ background: COLORS.panel2 }}>
+                                <div className="h-full rounded-full" style={{ width: `${m.health}%`, background: meta.color }} />
+                              </div>
+                              <span className="tabular-nums text-xs">{m.health}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums" style={{ color: COLORS.sub }}>{m.hours.toLocaleString()}h</td>
+                          <td className="px-3 py-2.5" style={{ color: COLORS.sub }}>{m.lastMaint}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+ 
+            {/* SECTION 6 — AI RECOMMENDATIONS */}
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <BrainCircuit size={16} style={{ color: COLORS.teal }} />
+                <h2 className="text-base font-semibold">AI Recommendations</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {RECOMMENDATIONS.map((r, i) => {
+                  const pColor = r.priority === "High" ? COLORS.red : r.priority === "Medium" ? COLORS.yellow : COLORS.teal;
+                  return (
+                    <Card key={i} className="flex flex-col justify-between p-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `${pColor}17`, color: pColor }}>
+                            {r.priority} priority
+                          </span>
+                          <Sparkles size={14} style={{ color: COLORS.teal }} />
+                        </div>
+                        <h3 className="mt-3 text-sm font-semibold">{r.title}</h3>
+                        <div className="mt-2">
+                          <Eyebrow>Estimated savings</Eyebrow>
+                          <div className="text-lg font-semibold" style={{ color: COLORS.green }}>{r.savings}</div>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed" style={{ color: COLORS.sub }}>{r.reason}</p>
+                      </div>
+                      <button
+                        className="mt-4 flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-colors hover:brightness-125"
+                        style={{ borderColor: COLORS.border, color: COLORS.text }}
+                      >
+                        {r.action} <ArrowUpRight size={13} />
+                      </button>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+ 
+            {/* SECTION 7 — ALERTS + SECTION 8/9 CHARTS ROW */}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <Card className="p-5 xl:col-span-1">
+                <div className="flex items-center justify-between">
+                  <Eyebrow>Live feed</Eyebrow>
+                </div>
+                <h2 className="mt-1 text-base font-semibold">Recent alerts</h2>
+                <div className="mt-4 flex flex-col gap-3">
+                  {ALERTS.map((a, i) => {
+                    const c = a.priority === "critical" ? COLORS.red : a.priority === "warning" ? COLORS.yellow : COLORS.teal;
+                    return (
+                      <div key={i} className="rounded-xl border p-3" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: c }}>
+                            <AlertTriangle size={12} /> {a.type}
+                          </span>
+                          <span className="text-[11px]" style={{ color: COLORS.sub }}>{a.time}</span>
+                        </div>
+                        <div className="mt-1.5 text-xs" style={{ color: COLORS.sub }}>{a.machine}</div>
+                        <div className="mt-1.5 flex items-center justify-between">
+                          <span className="text-xs">{a.action}</span>
+                          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: `${COLORS.border}`, color: COLORS.sub }}>{a.status}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+ 
+              <Card className="p-5">
+                <Eyebrow>Machine efficiency</Eyebrow>
+                <h2 className="mt-1 text-base font-semibold">Top 5 machines</h2>
+                <div className="mt-4 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={TOP5_EFFICIENCY} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" stroke={COLORS.sub} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis dataKey="name" type="category" stroke={COLORS.sub} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} width={50} />
+                      <Tooltip contentStyle={{ background: COLORS.panel2, border: `1px solid ${COLORS.border}`, borderRadius: 12, fontSize: 12 }} />
+                      <Bar dataKey="efficiency" radius={[0, 6, 6, 0]} fill={COLORS.teal} animationDuration={900} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+ 
+              <Card className="p-5">
+                <Eyebrow>Departments</Eyebrow>
+                <h2 className="mt-1 text-base font-semibold">Energy usage share</h2>
+                <div className="mt-2 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={DEPT_USAGE} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3} animationDuration={900}>
+                        {DEPT_USAGE.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: COLORS.panel2, border: `1px solid ${COLORS.border}`, borderRadius: 12, fontSize: 12 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1.5">
+                  {DEPT_USAGE.map((d, i) => (
+                    <div key={d.name} className="flex items-center gap-1.5 text-xs" style={{ color: COLORS.sub }}>
+                      <span className="h-2 w-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      {d.name}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+ 
+            {/* SECTION 10 — CARBON INTELLIGENCE + SECTION 11 TIMELINE */}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <Card className="p-5 xl:col-span-2">
+                <div className="flex items-center gap-2">
+                  <Leaf size={16} style={{ color: COLORS.green }} />
+                  <h2 className="text-base font-semibold">Carbon intelligence</h2>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  <div className="rounded-xl border p-4" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                    <Flame size={16} style={{ color: COLORS.red }} />
+                    <div className="mt-2 text-xl font-semibold tabular-nums">4.2t</div>
+                    <div className="text-xs" style={{ color: COLORS.sub }}>Carbon emitted</div>
+                  </div>
+                  <div className="rounded-xl border p-4" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                    <Wind size={16} style={{ color: COLORS.teal }} />
+                    <div className="mt-2 text-xl font-semibold tabular-nums">0.9t</div>
+                    <div className="text-xs" style={{ color: COLORS.sub }}>Carbon saved</div>
+                  </div>
+                  <div className="rounded-xl border p-4" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                    <TreePine size={16} style={{ color: COLORS.green }} />
+                    <div className="mt-2 text-xl font-semibold tabular-nums">41</div>
+                    <div className="text-xs" style={{ color: COLORS.sub }}>Equivalent trees</div>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-start gap-2 rounded-xl border p-3" style={{ borderColor: COLORS.border, background: `${COLORS.green}0D` }}>
+                  <Sparkles size={14} className="mt-0.5 shrink-0" style={{ color: COLORS.green }} />
+                  <p className="text-xs leading-relaxed" style={{ color: COLORS.sub }}>
+                    Running heavy machines after 6 PM could reduce monthly emissions by <span style={{ color: COLORS.text }}>12%</span>.
+                  </p>
+                </div>
+              </Card>
+ 
+              <Card className="p-5">
+                <Eyebrow>Activity</Eyebrow>
+                <h2 className="mt-1 text-base font-semibold">Recent timeline</h2>
+                <div className="mt-4 flex flex-col gap-4">
+                  {TIMELINE.map((t, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="h-2 w-2 rounded-full" style={{ background: COLORS.amber }} />
+                        {i < TIMELINE.length - 1 && <span className="mt-1 w-px flex-1" style={{ background: COLORS.border }} />}
+                      </div>
+                      <div className="pb-1">
+                        <div className="text-xs" style={{ color: COLORS.sub }}>{t.time}</div>
+                        <div className="text-sm">{t.text}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+ 
+            {/* SECTION 12 — FOOTER */}
+            <Card className="flex flex-wrap items-center justify-between gap-4 px-5 py-3 text-xs" style={{ color: COLORS.sub }}>
+              <span className="flex items-center gap-1.5"><RadioTower size={13} style={{ color: COLORS.green }} /> Gateway Online</span>
+              <span className="flex items-center gap-1.5"><CloudCog size={13} style={{ color: COLORS.green }} /> Cloud Synced</span>
+              <span className="flex items-center gap-1.5"><Wifi size={13} /> Last sync: 12s ago</span>
+              <span className="flex items-center gap-1.5"><ShieldCheck size={13} /> EnergyOS v2.4.1</span>
+            </Card>
+          </div>
+        </main>
+      </div>
+ 
+      {/* ================= MACHINE SIDE PANEL ================= */}
+      <AnimatePresence>
+        {activeMachine && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40"
+              style={{ background: "rgba(0,0,0,0.5)" }}
+              onClick={() => setActiveMachine(null)}
+            />
+            <motion.div
+              initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 32 }}
+              className="fixed right-0 top-0 z-50 h-full w-full max-w-md border-l p-6"
+              style={{ background: COLORS.panel, borderColor: COLORS.border }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <Eyebrow>{activeMachine.id} · {activeMachine.dept}</Eyebrow>
+                  <h2 className="mt-1 text-lg font-semibold">{activeMachine.name}</h2>
+                </div>
+                <button onClick={() => setActiveMachine(null)} className="rounded-lg border p-1.5" style={{ borderColor: COLORS.border }}>
+                  <X size={16} />
+                </button>
+              </div>
+ 
+              {(() => {
+                const meta = STATUS_META[activeMachine.status];
+                return (
+                  <span className="mt-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium" style={{ background: `${meta.color}17`, color: meta.color }}>
+                    <meta.Icon size={12} /> {meta.label}
+                  </span>
+                );
+              })()}
+ 
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="rounded-xl border p-3" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                  <div className="text-xs" style={{ color: COLORS.sub }}>Power draw</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums">{activeMachine.power} kW</div>
+                </div>
+                <div className="rounded-xl border p-3" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                  <div className="text-xs" style={{ color: COLORS.sub }}>Efficiency</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums">{activeMachine.efficiency}%</div>
+                </div>
+                <div className="rounded-xl border p-3" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                  <div className="text-xs" style={{ color: COLORS.sub }}>Running hours</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums">{activeMachine.hours.toLocaleString()}h</div>
+                </div>
+                <div className="rounded-xl border p-3" style={{ borderColor: COLORS.border, background: COLORS.panel2 }}>
+                  <div className="text-xs" style={{ color: COLORS.sub }}>Last maintenance</div>
+                  <div className="mt-1 text-lg font-semibold">{activeMachine.lastMaint}</div>
+                </div>
+              </div>
+ 
+              <div className="mt-6">
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span style={{ color: COLORS.sub }}>Health score</span>
+                  <span className="tabular-nums">{activeMachine.health}/100</span>
+                </div>
+                <div className="h-2 w-full rounded-full" style={{ background: COLORS.panel2 }}>
+                  <div className="h-full rounded-full" style={{ width: `${activeMachine.health}%`, background: STATUS_META[activeMachine.status].color }} />
+                </div>
+              </div>
+ 
+              <div className="mt-6 rounded-xl border p-4" style={{ borderColor: COLORS.border, background: `${COLORS.teal}0D` }}>
+                <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: COLORS.teal }}>
+                  <BrainCircuit size={14} /> AI Insight
+                </div>
+                <p className="mt-2 text-xs leading-relaxed" style={{ color: COLORS.sub }}>
+                  {activeMachine.status === "critical"
+                    ? "This machine shows signs of imminent failure risk. Schedule an inspection within 48 hours to avoid unplanned downtime."
+                    : activeMachine.status === "warning"
+                    ? "Efficiency has drifted below baseline. A routine check could recover 4–6% output."
+                    : "Operating within optimal parameters. No action needed."}
+                </p>
+              </div>
+ 
+              <button
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-black"
+                style={{ background: `linear-gradient(135deg, ${COLORS.amber}, #F5C36A)` }}
+              >
+                <Wrench size={15} /> Schedule Maintenance
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+ 
+/* ============================== HELPERS ============================== */
+ 
+function MiniStat({ icon: Icon, label, value, color }) {
+  return (
+    <Card className="p-4">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: `${color}1A`, color }}>
+        <Icon size={16} />
+      </div>
+      <div className="mt-2 text-xl font-semibold tabular-nums">{value}</div>
+      <div className="text-xs" style={{ color: COLORS.sub }}>{label}</div>
+    </Card>
+  );
+}
+ 
+function RadialHealth({ value }) {
+  const r = 30, c = 2 * Math.PI * r;
+  return (
+    <svg width="76" height="76" viewBox="0 0 76 76">
+      <circle cx="38" cy="38" r={r} fill="none" stroke={COLORS.border} strokeWidth="7" />
+      <circle
+        cx="38" cy="38" r={r} fill="none" stroke={COLORS.teal} strokeWidth="7"
+        strokeDasharray={c} strokeDashoffset={c - (value / 100) * c}
+        strokeLinecap="round" transform="rotate(-90 38 38)"
+      />
+    </svg>
+  );
+}
+ 
